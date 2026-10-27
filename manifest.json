@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Canva Campaign Automator",
+  "version": "0.1.0",
+  "description": "Automated batch cloning and campaign scheduling inside Canva",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.canva.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.canva.com/*"],
+      "js": ["main_world_runner.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
+  ]
+}
