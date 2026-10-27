@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Canva Campaign Automator",
-  "version": "0.1.0",
-  "description": "Automated batch cloning and campaign scheduling inside Canva",
+  "name": "Canva Multi-Platform Dispatcher",
+  "version": "1.0.0",
+  "description": "One-click batch duplication and campaign preparation for Canva",
   "permissions": [
     "storage"
   ],
@@ -14,6 +14,12 @@
       "matches": ["https://*.canva.com/*"],
       "js": ["main_world_runner.js"],
       "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.canva.com/*"],
+      "js": ["content_script.js"],
+      "world": "ISOLATED",
       "run_at": "document_idle"
     }
   ]

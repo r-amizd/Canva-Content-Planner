@@ -1,0 +1,56 @@
+# OS-specific files (Mac/Windows junk)
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment variables & secrets (Never commit API keys!)
+.env
+.env.local
+.env.*.local
+
+# Development tool configurations (Optional but recommended)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Extension Build Outputs (If you manually zip or bundle your extension)
+*.zip
+*.crx
+*.pem
+dist/
+build/
+
+# Local logs
+logs
+*.log
+npm-debug.log*
+
+# Credentials & environment overrides
+.env
+.env.local
+*.env
+config.local.json
+secrets.json
+
+# Scratch & debug scripts used for console testing
+scratch/
+test/
+*.scratch.js
+debug*.js
+*.log
+
+# Build & packaging artifacts
+*.zip
+*.crx
+dist/
+build/
+
+# Operating system / IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
