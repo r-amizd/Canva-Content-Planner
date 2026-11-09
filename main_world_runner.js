@@ -2,17 +2,20 @@
   console.log("[Canva Dispatcher] Main world runner loaded");
 
   function getSession() {
-    if (!window.bootstrap?.base?.a) {
-      throw new Error("Canva session bootstrap not ready");
+    if (window.bootstrap?.base?.a) {
+      const b = window.bootstrap.base.a;
+      return {
+        authz: b.C,
+        activeUser: b.N,
+        user: b.L,
+        brand: b.D,
+        analytics: b.A
+      };
     }
-    const session = window.bootstrap.base.a;
-    return {
-      authz: session.C,
-      activeUser: session.N,
-      user: session.L,
-      brand: session.D,
-      analytics: session.A
-    };
+    if (window.CanvaSession) {
+      return window.CanvaSession;
+    }
+    throw new Error("Canva session credentials not available");
   }
 
   function getHeaders(requestType = "general") {
@@ -35,7 +38,7 @@
     return crypto.randomUUID().replace(/-/g, "").substring(0, 22);
   }
 
-  // 1. Scrape all designs visible in current folder view
+  // DOM Scraper for Folder View
   function getFolderDesignsFromDOM() {
     const cards = Array.from(document.querySelectorAll('a[href*="designId="]'));
     const results = [];
@@ -67,7 +70,28 @@
     return results;
   }
 
-  // 2. Clone Design entity
+  // 1. Fetch Connected Social Queues
+  async function fetchConnectedQueues() {
+    const s = getSession();
+    const url = `https://www.canva.com/_ajax/shares/targetqueues?brand=${s.brand}&actions=C&filteredForContentPlanner&limit=100`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getHeaders("gettargetqueues"),
+      credentials: "include"
+    });
+
+    if (!res.ok) throw new Error(`Failed to load target queues (${res.status})`);
+    const data = await res.json();
+    return (data.targetQueues || []).map(q => ({
+      id: q.id,
+      platform: q.reference?.platform || "UNKNOWN",
+      targetType: q.reference?.targetType || "DEFAULT",
+      name: q.externalName || "Unnamed Channel",
+      avatar: q.externalThumb || ""
+    }));
+  }
+
+  // 2. Clone Design
   async function cloneDesign(sourceDesignId, newTitle) {
     const res = await fetch("https://www.canva.com/_ajax/design", {
       method: "POST",
@@ -92,7 +116,7 @@
     return newDesignId;
   }
 
-  // 3. Link newly cloned design to target folder
+  // 3. Register Design to Folder
   async function registerToFolder(folderId, designId) {
     const res = await fetch(`https://www.canva.com/_ajax/folders/${folderId}?createItems`, {
       method: "POST",
@@ -109,14 +133,47 @@
         ]
       })
     });
-
-    if (!res.ok) {
-      console.warn(`[Canva Dispatcher] Warning: registerToFolder returned ${res.status}`);
-    }
     return res.ok;
   }
 
-  // 4. Client-side DOM Injection for instant UI updates
+  // 4. Schedule Post via RPC
+  async function scheduleDesignPost(designId, queueId, scheduleDate, message) {
+    const s = getSession();
+    const payload = {
+      user: s.user,
+      brand: s.brand,
+      document: designId,
+      documentVersion: 1,
+      message: message || "",
+      targetQueues: [queueId],
+      isDraft: false,
+      action: "SCHEDULE_FOR_DATE",
+      scheduleDate: scheduleDate,
+      scheduleToNextAvailableSlot: false,
+      schema: "WEB_2",
+      exportSpec: {
+        pages: [1],
+        fileFormat: "JPG"
+      }
+    };
+
+    const res = await fetch("https://www.canva.com/_ajax/shares", {
+      method: "POST",
+      headers: getHeaders("createshare"),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Schedule failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    return data?.share?.id || true;
+  }
+
+  // 5. DOM Injection for Instant Grid Updates
   function injectClonedCardToDOM(sourceDesignId, newDesignId, newTitle) {
     const sourceLink = document.querySelector(`a[href*="designId=${sourceDesignId}"]`);
     if (!sourceLink) return;
@@ -124,80 +181,91 @@
     const sourceCard = sourceLink.closest('[data-testid], [role="group"], article, div[class*="Card"], div[tabindex]') || sourceLink.parentElement;
     if (!sourceCard || !sourceCard.parentElement) return;
 
-    // Clone the card DOM structure
     const newCard = sourceCard.cloneNode(true);
-
-    // Update all internal links with the new design ID
     newCard.querySelectorAll('a').forEach(a => {
       if (a.href.includes("designId=")) {
         a.href = a.href.replace(/designId=[A-Za-z0-9_-]+/, `designId=${newDesignId}`);
       }
     });
 
-    // Update titles and aria-labels
     newCard.querySelectorAll('[title]').forEach(el => el.setAttribute('title', newTitle));
     newCard.querySelectorAll('[aria-label]').forEach(el => el.setAttribute('aria-label', newTitle));
 
     const textNodes = newCard.querySelectorAll('span, p, h3');
-    if (textNodes.length > 0) {
-      // Find the one containing the text
-      for (const node of textNodes) {
-        if (node.children.length === 0 && node.innerText.trim().length > 0) {
-          node.innerText = newTitle;
-          break;
-        }
+    for (const node of textNodes) {
+      if (node.children.length === 0 && node.innerText.trim().length > 0) {
+        node.innerText = newTitle;
+        break;
       }
     }
 
-    // Prepend into the grid right before the source card or at top of grid
     sourceCard.parentElement.insertBefore(newCard, sourceCard.parentElement.firstChild);
   }
 
-  // Event bridge listener
+  // Event Router
   window.addEventListener("message", async (e) => {
     if (e.source !== window || !e.data || e.data.source !== "CANVA_EXT_UI") return;
 
-    if (e.data.type === "FETCH_FOLDER_ITEMS") {
+    if (e.data.type === "INIT_DATA_REQUEST") {
       try {
         const designs = getFolderDesignsFromDOM();
+        const queues = await fetchConnectedQueues();
         window.postMessage({
           source: "CANVA_EXT_ENGINE",
-          type: "FOLDER_ITEMS_RESULT",
+          type: "INIT_DATA_RESPONSE",
           requestId: e.data.requestId,
-          designs
+          designs,
+          queues
         }, "*");
       } catch (err) {
         window.postMessage({
           source: "CANVA_EXT_ENGINE",
-          type: "FOLDER_ITEMS_ERROR",
+          type: "INIT_DATA_ERROR",
           requestId: e.data.requestId,
           error: err.message
         }, "*");
       }
     }
 
-    if (e.data.type === "EXECUTE_DUPLICATION_BATCH") {
-      const { requestId, sourceDesignId, folderId, copies } = e.data.payload;
+    if (e.data.type === "EXECUTE_DUPLICATE_AND_SCHEDULE") {
+      const { requestId, sourceDesignId, folderId, tasks } = e.data.payload;
       const results = [];
 
-      for (const item of copies) {
+      for (const task of tasks) {
         try {
-          const newId = await cloneDesign(sourceDesignId, item.title);
-          if (folderId) {
-            await registerToFolder(folderId, newId);
-          }
-          // Inject card directly into the page grid so no refresh is needed
-          injectClonedCardToDOM(sourceDesignId, newId, item.title);
+          // Step 1: Duplicate
+          const newDesignId = await cloneDesign(sourceDesignId, task.title);
 
-          results.push({ title: item.title, designId: newId, success: true });
+          // Step 2: Register in folder & DOM update
+          if (folderId) {
+            await registerToFolder(folderId, newDesignId);
+          }
+          injectClonedCardToDOM(sourceDesignId, newDesignId, task.title);
+
+          // Step 3: Schedule if queue target provided
+          let shareId = null;
+          if (task.queueId && task.scheduleDate) {
+            shareId = await scheduleDesignPost(newDesignId, task.queueId, task.scheduleDate, task.caption);
+          }
+
+          results.push({
+            title: task.title,
+            designId: newDesignId,
+            scheduled: Boolean(shareId),
+            success: true
+          });
         } catch (err) {
-          results.push({ title: item.title, error: err.message, success: false });
+          results.push({
+            title: task.title,
+            error: err.message,
+            success: false
+          });
         }
       }
 
       window.postMessage({
         source: "CANVA_EXT_ENGINE",
-        type: "DUPLICATION_BATCH_COMPLETE",
+        type: "PIPELINE_COMPLETE",
         requestId,
         results
       }, "*");

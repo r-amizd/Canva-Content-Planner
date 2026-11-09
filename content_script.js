@@ -1,12 +1,19 @@
 (function () {
-  console.log("[Canva Dispatcher] Content script active");
+  console.log("[Canva Dispatcher] Content script ready");
 
   function getFolderIdFromUrl() {
     const match = window.location.pathname.match(/\/folder\/([A-Za-z0-9_-]+)/);
     return match ? match[1] : null;
   }
 
-  // Setup Shadow DOM Host
+  function getDefaultScheduleDate(daysFromNow = 1, hour = 10, minute = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + daysFromNow);
+    d.setHours(hour, minute, 0, 0);
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+  }
+
   const host = document.createElement("div");
   host.id = "canva-dispatcher-host";
   document.body.appendChild(host);
@@ -31,10 +38,7 @@
       box-shadow: 0 4px 16px rgba(125, 42, 232, 0.4);
       transition: transform 0.15s ease, background 0.15s ease;
     }
-    .launcher-btn:hover {
-      background: #6c22d1;
-      transform: translateY(-2px);
-    }
+    .launcher-btn:hover { background: #6c22d1; transform: translateY(-2px); }
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; width: 100vw; height: 100vh;
@@ -47,8 +51,8 @@
     }
     .modal-card {
       background: #fff;
-      width: 480px;
-      max-height: 85vh;
+      width: 580px;
+      max-height: 88vh;
       display: flex;
       flex-direction: column;
       border-radius: 14px;
@@ -56,44 +60,41 @@
       box-shadow: 0 20px 30px rgba(0,0,0,0.25);
       color: #1f2937;
     }
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 18px;
-    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .modal-header h3 { margin: 0; font-size: 18px; }
     .close-btn { background: none; border: none; font-size: 22px; cursor: pointer; color: #9ca3af; }
-    label { font-size: 12px; font-weight: 600; color: #4b5563; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; display: block; }
-    select, input[type="number"], input[type="text"] {
+    label { font-size: 11px; font-weight: 700; color: #4b5563; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; display: block; }
+    select, input[type="text"], input[type="datetime-local"] {
       width: 100%;
       box-sizing: border-box;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border: 1px solid #d1d5db;
-      border-radius: 8px;
-      font-size: 14px;
-      margin-bottom: 16px;
+      border-radius: 6px;
+      font-size: 13px;
     }
-    .count-row { display: flex; gap: 12px; align-items: center; }
-    .copies-list {
+    .task-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #f9fafb;
+    }
+    .task-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .task-caption {
+      margin-top: 6px;
+    }
+    .task-list {
       flex: 1;
       overflow-y: auto;
-      max-height: 220px;
+      max-height: 340px;
       margin-bottom: 16px;
       padding-right: 4px;
     }
-    .copy-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .copy-row span {
-      font-size: 12px;
-      color: #6b7280;
-      width: 24px;
-    }
-    .copy-row input { margin-bottom: 0; }
     .submit-btn {
       background: #7d2ae8;
       color: #fff;
@@ -103,45 +104,32 @@
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s ease;
     }
     .submit-btn:hover { background: #6c22d1; }
     .submit-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-    .status-box {
-      font-size: 13px;
-      margin-top: 10px;
-      max-height: 100px;
-      overflow-y: auto;
-    }
+    .status-box { font-size: 13px; margin-top: 10px; max-height: 90px; overflow-y: auto; }
   `;
   shadow.appendChild(style);
 
   const wrapper = document.createElement("div");
   wrapper.innerHTML = `
-    <button class="launcher-btn" id="openBtn">⚡ Batch Duplicate</button>
+    <button class="launcher-btn" id="openBtn">⚡ Dupe & Schedule</button>
     <div class="modal-overlay" id="overlay">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>Folder Batch Duplicator</h3>
+          <h3>Campaign Duplicator & Scheduler</h3>
           <button class="close-btn" id="closeBtn">&times;</button>
         </div>
 
-        <label>1. Select Source Design</label>
-        <select id="designSelect">
-          <option value="">Scanning folder designs...</option>
-        </select>
-
-        <div class="count-row">
-          <div style="flex: 1;">
-            <label>2. Number of Copies</label>
-            <input type="number" id="copyCount" min="1" max="15" value="3">
-          </div>
+        <div style="margin-bottom: 14px;">
+          <label>Select Source Design</label>
+          <select id="designSelect"><option value="">Scanning folder...</option></select>
         </div>
 
-        <label>3. Name Each Duplicate</label>
-        <div class="copies-list" id="copiesContainer"></div>
+        <label>Destination Campaign Targets</label>
+        <div class="task-list" id="taskList"></div>
 
-        <button class="submit-btn" id="runBtn">Duplicate & Save to Folder</button>
+        <button class="submit-btn" id="runBtn">Execute Campaign Dispatch</button>
         <div class="status-box" id="statusBox"></div>
       </div>
     </div>
@@ -152,75 +140,93 @@
   const closeBtn = shadow.getElementById("closeBtn");
   const overlay = shadow.getElementById("overlay");
   const designSelect = shadow.getElementById("designSelect");
-  const copyCount = shadow.getElementById("copyCount");
-  const copiesContainer = shadow.getElementById("copiesContainer");
+  const taskList = shadow.getElementById("taskList");
   const runBtn = shadow.getElementById("runBtn");
   const statusBox = shadow.getElementById("statusBox");
 
-  const defaultPresets = ["Instagram Post", "LinkedIn Graphic", "Facebook Feed", "X Post", "Pinterest Pin", "Story", "Flyer"];
+  let connectedQueues = [];
 
-  function renderCopyInputs(count) {
-    copiesContainer.innerHTML = "";
-    const selectedText = designSelect.options[designSelect.selectedIndex]?.text || "Design";
-    
-    for (let i = 0; i < count; i++) {
-      const row = document.createElement("div");
-      row.className = "copy-row";
-      const preset = defaultPresets[i] || `Copy ${i + 1}`;
-      row.innerHTML = `
-        <span>#${i + 1}</span>
-        <input type="text" class="copy-title-input" value="${selectedText} - ${preset}">
+  function renderTasks() {
+    taskList.innerHTML = "";
+    const sourceTitle = designSelect.options[designSelect.selectedIndex]?.text || "Design";
+
+    connectedQueues.forEach((queue, index) => {
+      const card = document.createElement("div");
+      card.className = "task-card";
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight: 600; font-size: 13px;">${queue.platform} &mdash; ${queue.name}</span>
+          <label style="margin: 0; font-size: 11px; text-transform:none;">
+            <input type="checkbox" class="task-enable" checked data-idx="${index}"> Enable
+          </label>
+        </div>
+        <div class="task-grid">
+          <div>
+            <label>Title</label>
+            <input type="text" class="task-title" value="${sourceTitle} - ${queue.platform}">
+          </div>
+          <div>
+            <label>Schedule Time</label>
+            <input type="datetime-local" class="task-date" value="${getDefaultScheduleDate(index + 1, 10 + (index % 4))}">
+          </div>
+        </div>
+        <div class="task-caption">
+          <label>Caption / Post Message</label>
+          <input type="text" class="task-msg" placeholder="Write post copy here...">
+        </div>
       `;
-      copiesContainer.appendChild(row);
-    }
+      taskList.appendChild(card);
+    });
   }
-
-  copyCount.addEventListener("input", () => {
-    const val = Math.min(Math.max(parseInt(copyCount.value, 10) || 1, 1), 15);
-    renderCopyInputs(val);
-  });
-
-  designSelect.addEventListener("change", () => {
-    renderCopyInputs(parseInt(copyCount.value, 10) || 3);
-  });
 
   openBtn.addEventListener("click", () => {
     const folderId = getFolderIdFromUrl();
     if (!folderId) {
-      alert("Please navigate to a Canva folder URL (e.g. canva.com/folder/FAHZ...) first.");
+      alert("Please navigate to a Canva folder view first.");
       return;
     }
 
     overlay.style.display = "flex";
     statusBox.innerHTML = "";
-    designSelect.innerHTML = `<option value="">Scanning designs in folder...</option>`;
+    designSelect.innerHTML = `<option value="">Fetching designs & queues...</option>`;
+    taskList.innerHTML = "";
     runBtn.disabled = true;
 
     const reqId = crypto.randomUUID();
     window.postMessage({
       source: "CANVA_EXT_UI",
-      type: "FETCH_FOLDER_ITEMS",
-      folderId,
+      type: "INIT_DATA_REQUEST",
       requestId: reqId
     }, "*");
 
-    function handleFolderResponse(e) {
+    function handleInit(e) {
       if (e.source !== window || !e.data || e.data.source !== "CANVA_EXT_ENGINE") return;
       if (e.data.requestId !== reqId) return;
-      window.removeEventListener("message", handleFolderResponse);
+      window.removeEventListener("message", handleInit);
+
+      if (e.data.type === "INIT_DATA_ERROR") {
+        statusBox.innerHTML = `<span style="color:red;">${e.data.error}</span>`;
+        return;
+      }
 
       const designs = e.data.designs || [];
+      connectedQueues = e.data.queues || [];
+
       if (designs.length === 0) {
-        designSelect.innerHTML = `<option value="">No designs found on this page</option>`;
+        designSelect.innerHTML = `<option value="">No designs found in this folder</option>`;
         return;
       }
 
       designSelect.innerHTML = designs.map(d => `<option value="${d.id}">${d.title}</option>`).join("");
       runBtn.disabled = false;
-      renderCopyInputs(parseInt(copyCount.value, 10) || 3);
+      renderTasks();
     }
 
-    window.addEventListener("message", handleFolderResponse);
+    window.addEventListener("message", handleInit);
+  });
+
+  designSelect.addEventListener("change", () => {
+    renderTasks();
   });
 
   closeBtn.addEventListener("click", () => {
@@ -232,44 +238,64 @@
     const folderId = getFolderIdFromUrl();
     if (!sourceDesignId || !folderId) return;
 
-    const titleInputs = shadow.querySelectorAll(".copy-title-input");
-    const copies = Array.from(titleInputs).map(inp => ({
-      title: inp.value.trim() || "Untitled Copy"
-    }));
+    const cards = Array.from(shadow.querySelectorAll(".task-card"));
+    const tasks = [];
+
+    cards.forEach((card, i) => {
+      const enabled = card.querySelector(".task-enable").checked;
+      if (!enabled) return;
+
+      const title = card.querySelector(".task-title").value.trim() || `Campaign Post ${i + 1}`;
+      const scheduleDate = card.querySelector(".task-date").value;
+      const caption = card.querySelector(".task-msg").value.trim();
+      const queue = connectedQueues[i];
+
+      tasks.push({
+        title,
+        queueId: queue?.id,
+        scheduleDate,
+        caption
+      });
+    });
+
+    if (tasks.length === 0) {
+      alert("Please enable at least one channel target.");
+      return;
+    }
 
     runBtn.disabled = true;
-    runBtn.textContent = "Duplicating...";
-    statusBox.innerHTML = `<span style="color:#6b7280;">Processing ${copies.length} copies...</span>`;
+    runBtn.textContent = "Dispatching campaign...";
+    statusBox.innerHTML = `<span style="color:#6b7280;">Processing ${tasks.length} items (cloning & scheduling)...</span>`;
 
     const reqId = crypto.randomUUID();
     window.postMessage({
       source: "CANVA_EXT_UI",
-      type: "EXECUTE_DUPLICATION_BATCH",
+      type: "EXECUTE_DUPLICATE_AND_SCHEDULE",
       payload: {
         requestId: reqId,
         sourceDesignId,
         folderId,
-        copies
+        tasks
       }
     }, "*");
 
-    function handleBatchComplete(e) {
+    function handleComplete(e) {
       if (e.source !== window || !e.data || e.data.source !== "CANVA_EXT_ENGINE") return;
       if (e.data.requestId !== reqId) return;
-      window.removeEventListener("message", handleBatchComplete);
+      window.removeEventListener("message", handleComplete);
 
       runBtn.disabled = false;
-      runBtn.textContent = "Duplicate & Save to Folder";
+      runBtn.textContent = "Execute Campaign Dispatch";
 
       const results = e.data.results || [];
-      const successes = results.filter(r => r.success);
+      const succeeded = results.filter(r => r.success);
       statusBox.innerHTML = `
         <span style="color: green; font-weight: 600;">
-          ✓ Successfully created ${successes.length}/${results.length} designs! Cards added to grid.
+          ✓ Completed ${succeeded.length}/${results.length} tasks! Designs duplicated, added to folder, and scheduled on the Content Planner calendar.
         </span>
       `;
     }
 
-    window.addEventListener("message", handleBatchComplete);
+    window.addEventListener("message", handleComplete);
   });
 })();
