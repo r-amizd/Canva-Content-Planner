@@ -51,7 +51,7 @@
     }
     .modal-card {
       background: #fff;
-      width: 580px;
+      width: 620px;
       max-height: 88vh;
       display: flex;
       flex-direction: column;
@@ -82,8 +82,35 @@
     .task-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 8px;
+    }
+    .time-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .time-input-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sync-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      text-transform: none;
+      margin: 0;
+    }
+    .sync-label input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #7d2ae8;
+      margin: 0;
     }
     .task-caption {
       margin-top: 6px;
@@ -146,9 +173,29 @@
 
   let connectedQueues = [];
 
+  function syncTimesAcrossCards(triggerInput) {
+    const parentCard = triggerInput.closest(".task-card");
+    const syncCheckbox = parentCard?.querySelector(".task-sync-time");
+
+    // Only broadcast if the triggered card itself has sync active
+    if (syncCheckbox && !syncCheckbox.checked) return;
+
+    const newValue = triggerInput.value;
+    const cards = shadow.querySelectorAll(".task-card");
+
+    cards.forEach(card => {
+      const isSyncActive = card.querySelector(".task-sync-time")?.checked;
+      const dateInput = card.querySelector(".task-date");
+      if (isSyncActive && dateInput && dateInput !== triggerInput) {
+        dateInput.value = newValue;
+      }
+    });
+  }
+
   function renderTasks() {
     taskList.innerHTML = "";
     const sourceTitle = designSelect.options[designSelect.selectedIndex]?.text || "Design";
+    const baselineSharedDate = getDefaultScheduleDate(1, 10, 0); // Unified default: tomorrow at 10:00 AM
 
     connectedQueues.forEach((queue, index) => {
       const card = document.createElement("div");
@@ -156,8 +203,8 @@
       card.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="font-weight: 600; font-size: 13px;">${queue.platform} &mdash; ${queue.name}</span>
-          <label style="margin: 0; font-size: 11px; text-transform:none;">
-            <input type="checkbox" class="task-enable" checked data-idx="${index}"> Enable
+          <label style="margin: 0; font-size: 11px; text-transform:none; display:flex; align-items:center; gap:4px;">
+            <input type="checkbox" class="task-enable" checked data-idx="${index}"> Enable Target
           </label>
         </div>
         <div class="task-grid">
@@ -165,9 +212,14 @@
             <label>Title</label>
             <input type="text" class="task-title" value="${sourceTitle} - ${queue.platform}">
           </div>
-          <div>
+          <div class="time-col">
             <label>Schedule Time</label>
-            <input type="datetime-local" class="task-date" value="${getDefaultScheduleDate(index + 1, 10 + (index % 4))}">
+            <div class="time-input-group">
+              <input type="datetime-local" class="task-date" value="${baselineSharedDate}">
+              <label class="sync-label" title="Keep this time synchronized with other targets">
+                <input type="checkbox" class="task-sync-time" checked> Sync
+              </label>
+            </div>
           </div>
         </div>
         <div class="task-caption">
@@ -175,6 +227,22 @@
           <input type="text" class="task-msg" placeholder="Write post copy here...">
         </div>
       `;
+
+      const dateInput = card.querySelector(".task-date");
+      dateInput.addEventListener("input", (e) => syncTimesAcrossCards(e.target));
+
+      const syncCheckbox = card.querySelector(".task-sync-time");
+      syncCheckbox.addEventListener("change", (e) => {
+        // If re-checked, pull the latest timestamp from the first active synchronized sibling
+        if (e.target.checked) {
+          const syncedSibling = Array.from(shadow.querySelectorAll(".task-card"))
+            .find(c => c !== card && c.querySelector(".task-sync-time")?.checked);
+          if (syncedSibling) {
+            dateInput.value = syncedSibling.querySelector(".task-date").value;
+          }
+        }
+      });
+
       taskList.appendChild(card);
     });
   }
