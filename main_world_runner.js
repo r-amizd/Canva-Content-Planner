@@ -136,9 +136,28 @@
     return res.ok;
   }
 
+  // Helper: Convert local datetime-local string to UTC "YYYY-MM-DDTHH:MM"
+  function convertLocalToUtcIso(localIsoString) {
+    if (!localIsoString) return localIsoString;
+    // localIsoString looks like "2026-11-09T21:00"
+    const localDate = new Date(localIsoString);
+    // getUTCFullYear, getUTCMonth, etc.
+    const year = localDate.getUTCFullYear();
+    const month = String(localDate.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(localDate.getUTCDate()).padStart(2, "0");
+    const hours = String(localDate.getUTCHours()).padStart(2, "0");
+    const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
   // 4. Schedule Post via RPC
-  async function scheduleDesignPost(designId, queueId, scheduleDate, message) {
+  async function scheduleDesignPost(designId, queueId, localScheduleDate, message) {
     const s = getSession();
+    
+    // Explicitly convert local UI time (CST) to UTC for Canva's backend
+    const utcScheduleDate = convertLocalToUtcIso(localScheduleDate);
+
     const payload = {
       user: s.user,
       brand: s.brand,
@@ -148,7 +167,7 @@
       targetQueues: [queueId],
       isDraft: false,
       action: "SCHEDULE_FOR_DATE",
-      scheduleDate: scheduleDate,
+      scheduleDate: utcScheduleDate,
       scheduleToNextAvailableSlot: false,
       schema: "WEB_2",
       exportSpec: {

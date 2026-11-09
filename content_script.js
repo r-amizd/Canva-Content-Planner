@@ -10,8 +10,9 @@
     const d = new Date();
     d.setDate(d.getDate() + daysFromNow);
     d.setHours(hour, minute, 0, 0);
-    const tzOffset = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   const host = document.createElement("div");
