@@ -70,6 +70,30 @@
     return results;
   }
 
+ // Helper: Normalize Meta / LinkedIn / X platforms cleanly
+  function resolvePlatformName(reference = {}) {
+    const platform = reference.platform || "UNKNOWN";
+    const targetType = reference.targetType || "DEFAULT";
+
+    if (platform === "FACEBOOK") {
+      if (targetType === "INSTAGRAM_ACCOUNT") return "INSTAGRAM";
+      if (targetType === "PAGE") return "FACEBOOK PAGE";
+      if (targetType === "GROUP") return "FACEBOOK GROUP";
+      return "FACEBOOK";
+    }
+
+    if (platform === "LINKEDIN") {
+      if (targetType === "PAGE") return "LINKEDIN PAGE";
+      return "LINKEDIN";
+    }
+
+    if (platform === "TWITTER") {
+      return "X (TWITTER)";
+    }
+
+    return platform;
+  }
+
   // 1. Fetch Connected Social Queues
   async function fetchConnectedQueues() {
     const s = getSession();
@@ -84,7 +108,8 @@
     const data = await res.json();
     return (data.targetQueues || []).map(q => ({
       id: q.id,
-      platform: q.reference?.platform || "UNKNOWN",
+      platform: resolvePlatformName(q.reference),
+      rawPlatform: q.reference?.platform || "UNKNOWN",
       targetType: q.reference?.targetType || "DEFAULT",
       name: q.externalName || "Unnamed Channel",
       avatar: q.externalThumb || ""
